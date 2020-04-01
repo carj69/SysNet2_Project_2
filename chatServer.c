@@ -28,9 +28,96 @@ typedef struct {
 
 client_t *clients[MAX_CLIENTS];
 
+char FILEPATH[100] = "useracounts.csv";
+int USER_FOUND = 1;
+int USER_NOT_FOUND = 0;
+FILE *fptr;
 
 
-/* Add client to queue */
+void strip_newline(char *s){
+    while (*s != '\0') {
+        if (*s == '\r' || *s == '\n') {
+            *s = '\0';
+        }
+        s++;
+    }
+}
+
+int userNameExist(char* name){
+	fptr = fopen(FILEPATH, "r");
+        if(fptr == NULL){
+                printf("File not found\n");
+		return USER_NOT_FOUND;
+	}
+	char buff[2048] = "";	
+	while(fgets(buff, 2048, fptr)) {
+		int field_count = 0;
+		char* field = strtok(buff, ",");
+		while(field) {
+			if(field_count == 0 && strcmp(name, field) == 0) {
+				printf("User [%s] found\n", field);
+				fclose(fptr);
+				return USER_FOUND;
+			}
+			field = strtok(NULL, ",");
+			field_count++;
+		}
+	}
+	printf("User not Found\n");
+	fclose(fptr);
+	return USER_NOT_FOUND;
+}
+
+/* Add client to  */
+int userRegister(char* username, char* password){
+	// check file for username
+	if(userNameExist(username))
+		return USER_FOUND;
+	fptr = fopen(FILEPATH, "a");
+        if(fptr == NULL)
+        	printf("File error");
+ 	fputs(username, fptr);
+	fputs(",", fptr);
+	fputs(password, fptr);
+	fputs("\n", fptr);
+
+	fclose(fptr);
+	return USER_NOT_FOUND;
+}
+int userLogin(char* name, char* password){
+	fptr = fopen(FILEPATH, "r");
+        if(fptr == NULL){
+                printf("File not found\n");
+                return USER_NOT_FOUND;
+        }
+        char buff[2048] = "";
+        while(fgets(buff, 2048, fptr)) {
+                int field_count = 0;
+                char* field = strtok(buff, ",");
+                while(field) {
+                        if(field_count == 0 && strcmp(name, field) == 0) {
+                                printf("User [%s] found\n", field);
+                                field = strtok(NULL, ",");
+				strip_newline(field);
+				printf("Comparing Password [%s] with [%s]\n", password, field);
+				if(strcmp(password, field) == 0){
+					fclose(fptr);
+					return USER_FOUND;
+				} else {
+					printf("Incorrect Password\n");
+					fclose(fptr);
+                                	return USER_NOT_FOUND;
+				}
+                        }
+                        field = strtok(NULL, ",");
+                        field_count++;
+                }
+        }
+        printf("User not Found\n");
+        fclose(fptr);
+        return USER_NOT_FOUND;
+}
+
 
 /* Delete client from queue */
 
@@ -92,15 +179,52 @@ int main() {
 			continue;
 		}
 		printf("Client connection Successful\n");
-			
-		// Send Data
-		char buff[2047] = "";
-		long valread = read(connfd, buff, 2047);
-		if(valread > 0) {
-			char data[2047] = "Hello from server";
-			printf(buff);		
-			send(connfd, data, sizeof(data), 0); // Then send formatted response back to client
+		
+		while(1) {	
+			// Send Data
+			char buff1[2048] = "";
+			char buff2[2048] = "";
+			long valread = read(connfd, buff1, 2048);
+			if(strcmp(buff1, "login") == 0) {
+				memset(buff1,0,strlen(buff1));
+				printf("Client loggin on\n");
+				read(connfd, buff1, 2048);
+                                printf("Username: %s\n", buff1);
+                                read(connfd, buff2, 2048);
+                                printf("Password: %s\n", buff2);
+				
+				//check csv fil
+				if(userLogin(buff1, buff2) == USER_FOUND)
+					send(connfd, "Log on success", 50,0);
+                                else
+                                        send(connfd, "Log on failed", 50,0);
+
+			} else if(strcmp(buff1, "register") == 0) {
+				memset(buff1,0,strlen(buff1));
+				printf("Client registering\n");
+				read(connfd, buff1, 2048);
+				printf("Username: %s\n", buff1);
+				read(connfd, buff2, 2048);
+				printf("Password: %s\n", buff2);
+
+				if(userRegister(buff1, buff2) == USER_FOUND)
+					send(connfd, "Username already exits", 50,0);
+				else
+					send(connfd, "Register successful", 50,0);
+
+			} else if (strcmp(buff1, "exit") == 0) {
+			       	printf("Client exiting...\n");
+		       		break;	       
+			}else if(valread > 0){
+				printf("%s\n",buff1);
+			}
 		}
+
+		//if(valread > 0) {
+		//	char data[2047] = "Hello from server";
+		//	printf(buff);		
+		//	send(connfd, data, sizeof(data), 0); // Then send formatted response back to client
+		//}
 
 
 		sleep(1);

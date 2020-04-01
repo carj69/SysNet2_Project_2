@@ -11,7 +11,7 @@
 
 
 void printMenu() {
-	printf("-=|  Online Chat Room  |=-\n");
+	printf("\n-=|  Online Chat Room  |=-\n");
 	printf("1. Register \n");
 	printf("2. Login\n");
 	printf("0. QUIT \n\n");
@@ -20,7 +20,7 @@ void printMenu() {
 
 void printMainMenu() {
 
-	printf("-=|  MAIN MENU  |=-\n");
+	printf("\n-=|  MAIN MENU  |=-\n");
 	printf("1. View current online number\n");
 	printf("2. Enter the group chat\n");
 	printf("3. Enter the private chat\n");
@@ -94,34 +94,60 @@ int main()
 	
 	int input, inputMainMenu;
 	char buff[1024];
+	char server_response[1024];
 	while(1) {
 		printMenu();
 		scanf("%d",&input);
 		
 		switch(input){
 			case 1:
+				send(client_fd, "register", strlen("register"), 0);	
+				
+				memset(buff,0,strlen(buff));
 				printf("Create UserName: ");
 				scanf("%s", buff);
-				printf("Create Password:");
+				send(client_fd, buff, strlen(buff), 0);
+				
+				memset(buff,0,strlen(buff));
+				printf("Create Password: ");
 				scanf("%s", buff);
+				send(client_fd, buff, strlen(buff), 0);
+
 				// check/update database
+				memset(server_response,0,strlen(server_response));
+        			recv(client_fd, &server_response, sizeof(server_response), 0);
+				printf("Server responds: %s\n", server_response);
 				break;
 			case 2:
+				send(client_fd, "login", strlen("login"), 0);
+                                
+				memset(buff,0,strlen(buff));
 				printf("UserName: ");
-                scanf("%s", buff);
-                printf("Password:");
-				scanf("%s", buff);
-				// check database
-			
-				while(1){
+                                scanf("%s", buff);
+                                send(client_fd, buff, strlen(buff), 0);
+
+				memset(buff,0,strlen(buff));	
+				printf("Password: ");
+                                scanf("%s", buff);
+                                send(client_fd, buff, strlen(buff), 0);
+
+                                // check/update database
+                                memset(server_response,0,strlen(server_response));
+				recv(client_fd, &server_response, sizeof(server_response), 0);
+                                printf("Server responds: %s\n", server_response);
+				
+				while(strcmp(server_response, "Log on success")==0){
 					printMainMenu();
 					scanf("%d",&inputMainMenu);
 					selectMainMenu(inputMainMenu);
+					if(inputMainMenu == 0)
+						break;
 				}
 				
 				break;
 			case 0:
 				printf("Exiting...\n");
+				send(client_fd, "exit", strlen("exit"), 0);
 				close(client_fd);
 				return EXIT_SUCCESS;
 		}	
