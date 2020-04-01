@@ -33,6 +33,49 @@ void printMainMenu() {
 	printf("Enter an action: ");
 }
 
+
+int currentOnline() {
+	int numberOnline = 1;
+		
+	return numberOnline;
+}
+
+void selectMainMenu(int input) {
+	
+	switch(input){
+			case 1:
+				printf("Current of number of user onlin is: %d",currentOnline());				
+				break;
+			case 2:
+				printf("entering group chat");
+				break;
+			case 3:
+				printf("entering private chat");
+				break;
+			case 4:
+				printf("View chat history");
+				break;
+			case 5:
+				printf("File transfering");
+				break;
+			case 6:
+				printf("Change password");
+				break;
+			case 7:
+				printf("Log out");
+				break;
+			case 8:
+				printf("admin");
+				break;
+			case 0:
+				printf("Exiting main menu");
+				break;
+			default:
+				break;
+				
+		}	
+}
+
 int main() 
 { 
 	// create the TCP socket
@@ -65,12 +108,17 @@ int main()
 				break;
 			case 2:
 				printf("UserName: ");
-                                scanf("%s", buff);
-                                printf("Password:");
+                scanf("%s", buff);
+                printf("Password:");
 				scanf("%s", buff);
 				// check database
-				printMainMenu();
-				scanf("%d",&inputMainMenu);
+			
+				while(1){
+					printMainMenu();
+					scanf("%d",&inputMainMenu);
+					selectMainMenu(inputMainMenu);
+				}
+				
 				break;
 			case 0:
 				printf("Exiting...\n");
