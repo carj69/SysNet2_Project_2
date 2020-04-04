@@ -1,13 +1,32 @@
-
 #include <netdb.h> 
 #include <stdio.h> 
 #include <stdlib.h> 
 #include <string.h> 
+
 #include <sys/socket.h> 
 #include <netinet/in.h>
 #include <unistd.h>
-#define MAX 80 
+
+#define MAX 100
 #define PORT 60001 
+#define BUFFER_SZ 2048
+
+char cName[BUFFER_SZ];
+
+void str_trim_lf (char* arr, int length) {
+    	int i;
+    	for (i = 0; i < length; i++) { // trim \n
+        	if (arr[i] == '\n') {
+            	arr[i] = '\0';
+            	break;
+        	}
+    	}
+}
+
+void str_overwrite_stdout() {
+	printf("\r%s", "> ");
+	fflush(stdout);
+}
 
 
 void printMenu() {
@@ -33,48 +52,68 @@ void printMainMenu() {
 	printf("Enter an action: ");
 }
 
+void handleGroupChat(int client_fd) {
+	// Need to send continously
+	// Need to receive continously
+	char buffer[BUFFER_SZ] = "";
+	char message[BUFFER_SZ] = "";
 
-int currentOnline() {
-	int numberOnline = 1;
-		
-	return numberOnline;
+	while(1) {
+		str_overwrite_stdout();
+		fgets(buffer, BUFFER_SZ, stdin);
+		str_trim_lf(buffer, BUFFER_SZ);
+
+		if (strcmp(buffer, "exit") == 0) {
+			break;
+		} else {
+			sprintf(message, "%s: %s", cName, buffer);
+			send(client_fd, message, strlen(message), 0);
+		}
+	}
 }
 
-void selectMainMenu(int input) {
+void sendOptionToServer(int client_fd, int option) {
 	
-	switch(input){
-			case 1:
-				printf("Current of number of user onlin is: %d",currentOnline());				
-				break;
-			case 2:
-				printf("entering group chat");
-				break;
-			case 3:
-				printf("entering private chat");
-				break;
-			case 4:
-				printf("View chat history");
-				break;
-			case 5:
-				printf("File transfering");
-				break;
-			case 6:
-				printf("Change password");
-				break;
-			case 7:
-				printf("Log out");
-				break;
-			case 8:
-				printf("admin");
-				break;
-			case 0:
-				printf("Exiting main menu");
-				break;
-			default:
-				break;
-				
-		}	
+	char server_response[2048] = "";
+	switch(option){
+		case 1:
+			printf("\n-=| View Current Online Users |=-\n");				
+			send(client_fd, "View Online", MAX, 0);
+			memset(server_response, 0, strlen(server_response));
+			recv(client_fd, &server_response, sizeof(server_response), 0);
+			printf("The number of current online users is: %s\n", server_response);
+			break;
+		case 2:
+			printf("\n-=| Group Chat |=-\n");
+			handleGroupChat(client_fd);
+			break;
+		case 3:
+			printf("\n-=| Private Chat |=-\n");
+			break;
+		case 4:
+			printf("View chat history");
+			break;
+		case 5:
+			printf("File transfering");
+			break;
+		case 6:
+			printf("Change password");
+			break;
+		case 7:
+			printf("Log out");
+			break;
+		case 8:
+			printf("admin");
+			break;
+		case 0:
+			printf("Exiting main menu");
+			break;
+		default:
+			printf("Try again\n");
+			break;				
+	}	
 }
+
 
 int main() 
 { 
@@ -92,7 +131,7 @@ int main()
 		printf("Problem Connecting\n");
 	}
 	
-	int input, inputMainMenu;
+	int input, menuOption;
 	char buff[1024];
 	char server_response[1024];
 	while(1) {
@@ -100,6 +139,7 @@ int main()
 		scanf("%d",&input);
 		
 		switch(input){
+			/* User needs to register with the server */
 			case 1:
 				send(client_fd, "register", strlen("register"), 0);	
 				
@@ -118,6 +158,7 @@ int main()
         			recv(client_fd, &server_response, sizeof(server_response), 0);
 				printf("Server responds: %s\n", server_response);
 				break;
+			/* User Needs to Login */
 			case 2:
 				send(client_fd, "login", strlen("login"), 0);
                                 
@@ -137,33 +178,25 @@ int main()
                                 printf("Server responds: %s\n", server_response);
 				
 				while(strcmp(server_response, "Log on success")==0){
+					strcpy(cName, buff);
 					printMainMenu();
-					scanf("%d",&inputMainMenu);
-					selectMainMenu(inputMainMenu);
-					if(inputMainMenu == 0)
+					scanf("%d",&menuOption);
+					sendOptionToServer(client_fd, menuOption);
+					if(menuOption == 0)
 						break;
 				}
 				
 				break;
+			/* User needs to disconnect */
 			case 0:
 				printf("Exiting...\n");
 				send(client_fd, "exit", strlen("exit"), 0);
 				close(client_fd);
 				return EXIT_SUCCESS;
-		}	
-
+			default:
+				break;
+		}
 	}
-
-	// Send request to server
-	//char * test = "Hello from client";
-    	//send(client_fd, test, strlen(test) , 0 );
-
-	// read server response
-    	//char server_response[1024];
-	//recv(client_fd, &server_response, sizeof(server_response), 0); 
-
-	// Print out response
-	//printf("\n\n Server responds: %s\n", server_response);
 	// Close Server
 	close(client_fd);
     	

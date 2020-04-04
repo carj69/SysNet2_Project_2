@@ -31,8 +31,9 @@ client_t *clients[MAX_CLIENTS];
 char FILEPATH[100] = "useracounts.csv";
 int USER_FOUND = 1;
 int USER_NOT_FOUND = 0;
-FILE *fptr;
 
+FILE *fptr;
+int currentOnline = 0;
 
 void strip_newline(char *s){
     while (*s != '\0') {
@@ -68,7 +69,7 @@ int userNameExist(char* name){
 	return USER_NOT_FOUND;
 }
 
-/* Add client to  */
+/* Add client to csv file */
 int userRegister(char* username, char* password){
 	// check file for username
 	if(userNameExist(username))
@@ -84,6 +85,7 @@ int userRegister(char* username, char* password){
 	fclose(fptr);
 	return USER_NOT_FOUND;
 }
+/* Check file */
 int userLogin(char* name, char* password){
 	fptr = fopen(FILEPATH, "r");
         if(fptr == NULL){
@@ -119,17 +121,44 @@ int userLogin(char* name, char* password){
 }
 
 
-/* Delete client from queue */
-
 /* Send message to a client from a client */
 
 /* Send message to all clients but the sender */
+void handleGroupChat(int connfd) {
+	
+}
 
 /* Send message to sender */
 
-/* Send list of active clients */
+/* Handles all communication with the client in Main Menu*/
+void handleCommunication(int connfd) {
+	char buff[2048] = "";
+     	long valread = read(connfd, buff, 2048);
+	strip_newline(buff);
+	if(strcmp(buff, "View Online") == 0) {
+		char result[50];
+		sprintf(result, "%d", currentOnline);
+		send(connfd, result, sizeof(int), 0);
+	}else if(strcmp(buff, "Enter Group") == 0){
+		handleGroupChat(connfd);
+	}else if(strcmp(buff, "Enter Private") == 0){
 
-/* Handles all communication with the client */
+	}else if(strcmp(buff, "View History") == 0){
+
+	}else if(strcmp(buff, "File Transfer") == 0){
+
+	}else if(strcmp(buff, "Change Password") == 0){	
+
+	}else if(strcmp(buff, "Logout") == 0){
+
+	}else if(strcmp(buff, "Administrator") == 0){
+
+	}else if(strcmp(buff, "Return") == 0){
+
+	}else {
+		printf("[Main Menu]Unknown responce: %s\n",buff);
+	}
+}
 
 /* Handles Server starting sequence */
 int main() {
@@ -194,8 +223,11 @@ int main() {
                                 printf("Password: %s\n", buff2);
 				
 				//check csv fil
-				if(userLogin(buff1, buff2) == USER_FOUND)
+				if(userLogin(buff1, buff2) == USER_FOUND){
+					currentOnline++;
 					send(connfd, "Log on success", 50,0);
+					handleCommunication(connfd);
+				}
                                 else
                                         send(connfd, "Log on failed", 50,0);
 
@@ -216,17 +248,10 @@ int main() {
 			       	printf("Client exiting...\n");
 		       		break;	       
 			}else if(valread > 0){
-				printf("%s\n",buff1);
+				printf("[Login Menu] Unknown response: %s\n",buff1);
 			}
 		}
-
-		//if(valread > 0) {
-		//	char data[2047] = "Hello from server";
-		//	printf(buff);		
-		//	send(connfd, data, sizeof(data), 0); // Then send formatted response back to client
-		//}
-
-
+		/* Decrease server CPU usage */
 		sleep(1);
 	}
 	return EXIT_SUCCESS;
