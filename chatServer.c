@@ -16,14 +16,14 @@
 #include <fcntl.h>
 #include <dirent.h>        
 
-#define PORT_NUMBER 60001
+#define PORT_NUMBER 60010
 #define DATA_SIZE 2048
 #define MAX_CLIENTS 100
 #define BUFFER_SZ 100
 
 void strip_newline(char* name);
 
-static _Atomic unsigned int cli_count = 0;
+static _Atomic unsigned int currentOnline = 0;
 static int uid = 10;
 
 /* Client structure */
@@ -32,6 +32,7 @@ typedef struct {
     int sockfd;              /* Connection file descriptor */
     int uid;                 /* Client unique identifier */
     char name[32];           /* Client name */
+    int in_group;
 } client_t;
 
 client_t *clients[MAX_CLIENTS];
@@ -43,7 +44,7 @@ int USER_FOUND = 1;
 int USER_NOT_FOUND = 0;
 
 FILE *fptr;
-int currentOnline = 0;
+
 
 void strip_newline(char *s){
     while (*s != '\0') {
@@ -69,12 +70,13 @@ void str_trim_lf (char* arr, int length) {
   	}
 }
 
-/* Add clients to queue */
+/* Add clients to online queue */
 void queue_add(client_t *cl){
 	pthread_mutex_lock(&clients_mutex);
 	for(int i=0; i < MAX_CLIENTS; ++i){
 		if(!clients[i]){
 			clients[i] = cl;
+			currentOnline++;
 			//printf("client sockfd: %d",clients[i]->sockfd);	
 			break;
 		}
@@ -83,13 +85,15 @@ void queue_add(client_t *cl){
 	pthread_mutex_unlock(&clients_mutex);
 }
 
-/* Remove clients to queue */
+/* Remove clients to online queue */
 void queue_remove(int uid){
 	pthread_mutex_lock(&clients_mutex);
+
 	for(int i=0; i < MAX_CLIENTS; ++i){
 		if(clients[i]){
 			if(clients[i]->uid == uid){
 				clients[i] = NULL;
+				currentOnline--;
 				break;
 			}
 		}
@@ -98,19 +102,53 @@ void queue_remove(int uid){
 	pthread_mutex_unlock(&clients_mutex);
 }
 
-/* Send message to all clients except sender */
-void send_message(char *s, int uid){
+
+void leave_groupchat(int id) {
+	pthread_mutex_lock(&clients_mutex);
+
+        for(int i=0; i < MAX_CLIENTS; ++i){
+                if(clients[i]){
+                        if(clients[i]->uid == id){
+                                clients[i]->in_group = 0;
+                       		if (write(clients[i]->sockfd, "exit", strlen("exit")) < 0) {
+                                        perror("Write to descriptor failed");
+                                        break; 
+  				}
+				break;
+                        }
+                }
+        }
+
+        pthread_mutex_unlock(&clients_mutex);
+}
+
+void join_groupchat(int id) {
+	pthread_mutex_lock(&clients_mutex);
+
+        for(int i=0; i < MAX_CLIENTS; ++i){
+                if(clients[i]){
+                        if(clients[i]->uid == id){
+                                clients[i]->in_group = 1;
+                                break;
+                        }
+                }
+        }
+
+        pthread_mutex_unlock(&clients_mutex);
+}
+
+/* Send message to all clients except sender in groupchat*/
+void send_message_to_group(char *s, int uid){
 	
 	pthread_mutex_lock(&clients_mutex);
 
 	for(int i=0; i<MAX_CLIENTS; ++i){
 		if(clients[i]){
-			strcat(s ,clients[i]->name);
-			printf("test sending message \n");
-			if (write(clients[i]->sockfd, s, strlen(s)) < 0) {
-				perror("Write to descriptor failed");
-				break;
-            		}
+			if(clients[i]->in_group == 1){
+				strcat(s ,clients[i]->name);
+				printf("test sending message \n");
+				send(clients[i]->sockfd, s, strlen(s), 0);
+			}
 		}
 	}
 
@@ -130,7 +168,6 @@ int userNameExist(char* name){
 		char* field = strtok(buff, ",");
 		while(field) {
 			if(field_count == 0 && strcmp(name, field) == 0) {
-				printf("User [%s] found\n", field);
 				fclose(fptr);
 				return USER_FOUND;
 			}
@@ -173,7 +210,6 @@ int userLogin(char* name, char* password){
                 char* field = strtok(buff, ",");
                 while(field) {
                         if(field_count == 0 && strcmp(name, field) == 0) {
-                                printf("User [%s] found\n", field);
                                 field = strtok(NULL, ",");
 				strip_newline(field);
 				if(strcmp(password, field) == 0){
@@ -200,73 +236,89 @@ void goToGroupChat(client_t *cli) {
 	char name[50];
 	int leave_flag = 0;
 	
+	join_groupchat(cli->uid);
 	printf("Client:%s Id: %d joins the group chat\n", cli->name, cli->uid);	
 	while(1){
 		if (leave_flag) {
 			break;
 		}
-		
+			
 		int receive = recv(cli->sockfd, buff_out, BUFFER_SZ, 0);
+		/* If message received */
 		if (receive > 0){
 			if(strlen(buff_out) > 0){
 				printf("Incoming message\n");
-				send_message(buff_out, cli->uid);
+				send_message_to_group(buff_out, cli->uid);
 				str_trim_lf(buff_out, strlen(buff_out));
 				printf("%s -> %s\n", buff_out, cli->name);
 			}
 		} else if (receive == 0 || strcmp(buff_out, "exit") == 0){
 			sprintf(buff_out, "%s has left\n", cli->name);
 			printf("%s", buff_out);
-			send_message(buff_out, cli->uid);
+			send_message_to_group(buff_out, cli->uid);
 			leave_flag = 1;
 		} else {
 			printf("ERROR: -1\n");
 			leave_flag = 1;
 		}
-					
+				
 		bzero(buff_out, BUFFER_SZ);
 	}
 
-  	/* Delete client from queue and yield thread */
-	close(cli->sockfd);
-  	queue_remove(cli->uid);
-  	free(cli);
-  	cli_count--;
-  	pthread_detach(pthread_self());
+  	/* Delete client from Group chat queue and yield thread */
+	//close(cli->sockfd);
+	//queue_remove(cli->uid);
+  	//cli_count--;
+  	//pthread_detach(pthread_self());
+	leave_groupchat(cli->uid);
 }
 
 /* Send message to a client from a client */
 
 /* Send message to all clients but the sender */
 void goToMenu(client_t *client) {
-	 printf("Client:%s Id: %d\n", client->name, client->uid);	
-				char buff[2048] = "";
-				long valread = read(client->sockfd, buff, 2048);
-				strip_newline(buff);
-				if(strcmp(buff, "View Online") == 0) {
-					char result[50];
-					sprintf(result, "%d", currentOnline);
-					send(client->sockfd, result, sizeof(int), 0);
-				}else if(strcmp(buff, "Enter Group") == 0){
-					goToGroupChat(client);
-					printf("%s leaves group chat\n", client->name);
-				}else if(strcmp(buff, "Enter Private") == 0){
+	printf("Client: [%s] Id: %d is in the Main Menu\n", client->name, client->uid);
+    	char buff[2048] = "";
+	while(1) {
+		memset(buff, 0, strlen(buff));
+		long valread = read(client->sockfd, buff, 2048);
+		strip_newline(buff);
+		if(strcmp(buff, "View Online") == 0) {
+			printf("Client [%s] sends [%s] command\n", client->name, buff);
+			char result[50];
+			sprintf(result, "%d", currentOnline);
+			send(client->sockfd, result, sizeof(int), 0);
+		}else if(strcmp(buff, "Enter Group") == 0){
+			printf("Client [%s] sends [%s] command\n", client->name, buff);
+			goToGroupChat(client);
+			printf("%s leaves group chat\n", client->name);
+		}else if(strcmp(buff, "Enter Private") == 0){
+			printf("Client [%s] sends [%s] command\n", client->name, buff);
 			
-				}else if(strcmp(buff, "View History") == 0){
+		}else if(strcmp(buff, "View History") == 0){
+			printf("Client [%s] sends [%s] command\n", client->name, buff);
+				
+		}else if(strcmp(buff, "File Transfer") == 0){
+			printf("Client [%s] sends [%s] command\n", client->name, buff);
+				
+		}else if(strcmp(buff, "Change Password") == 0){	
+			printf("Client [%s] sends [%s] command\n", client->name, buff);
+
+		}else if(strcmp(buff, "Logout") == 0){
+			printf("Client [%s] sends [%s] command\n", client->name, buff);
 			
-				}else if(strcmp(buff, "File Transfer") == 0){
+		}else if(strcmp(buff, "Administrator") == 0){
+			printf("Client [%s] sends [%s] command\n", client->name, buff);
 			
-				}else if(strcmp(buff, "Change Password") == 0){	
-			
-				}else if(strcmp(buff, "Logout") == 0){
-			
-				}else if(strcmp(buff, "Administrator") == 0){
-			
-				}else if(strcmp(buff, "Return") == 0){
-			
-				}else {
-					printf("[Main Menu]Unknown responce: %s\n",buff);
-				}
+		}else if(strcmp(buff, "Return") == 0){
+			printf("Client [%s] sends [%s] command\n", client->name, buff);
+
+			break;	
+		}else if(valread > 0){
+			printf("[Main Menu]Unknown responce: %s\n",buff);
+		}
+	}
+	currentOnline--;
 }
 
 /* Send message to sender */
@@ -296,7 +348,11 @@ void *handle_client(void *arg){
                 	if(userLogin(buff1, buff2) == USER_FOUND){
 				strcpy(cli->name, buff1);
 				send(connfd, "Log on success", 50,0);
-				printf("Client:%s Id: %d\n", cli->name, cli->uid);
+				
+				/* Add client to the 0nline queue */
+                		queue_add(cli);
+
+				printf("Client:[%s] Id: %d has logged on\n", cli->name, cli->uid);
 				goToMenu(cli);
 			} else {
     				send(connfd, "Log on failed", 50,0);
@@ -379,10 +435,8 @@ int main() {
 		cli->address = client_addr;
 		cli->sockfd = connfd;
 		cli->uid = uid++;
+		cli->in_group = 0;
 
-		/* Add client to the queue and fork thread */
-		queue_add(cli);
-		
 		pthread_create(&tid, NULL, &handle_client, (void*)cli);
 
 		/* Decrease server CPU usage */
