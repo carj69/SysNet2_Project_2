@@ -5,8 +5,8 @@ RM =rm
 
 #targets .
 all: chatClient.c chatServer.c
-	$(cc) -o client chatClient.c	
-	$(cc) -o server chatServer.c
+	$(cc) -o client chatClient.c -pthread	
+	$(cc) -pthread -o server chatServer.c 
 	gnome-terminal -t server --working-directory=/home/techbeamers -e "./server"
 	sleep 10s 
 	$(MAKE) client_target	

@@ -10,6 +10,8 @@
 #include <sys/socket.h> 
 #include <sys/types.h> 
 #include <sys/stat.h>
+#include <signal.h>
+#include <pthread.h>
 #include <string.h>
 #include <fcntl.h>
 #include <dirent.h>        
@@ -17,16 +19,24 @@
 #define PORT_NUMBER 60001
 #define DATA_SIZE 2048
 #define MAX_CLIENTS 100
+#define BUFFER_SZ 100
+
+void strip_newline(char* name);
+
+static _Atomic unsigned int cli_count = 0;
+static int uid = 10;
 
 /* Client structure */
 typedef struct {
-    struct sockaddr_in addr; /* Client remote address */
-    int connfd;              /* Connection file descriptor */
+    struct sockaddr_in address; /* Client remote address */
+    int sockfd;              /* Connection file descriptor */
     int uid;                 /* Client unique identifier */
     char name[32];           /* Client name */
 } client_t;
 
 client_t *clients[MAX_CLIENTS];
+
+pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 char FILEPATH[100] = "useracounts.csv";
 int USER_FOUND = 1;
@@ -43,6 +53,70 @@ void strip_newline(char *s){
         s++;
     }
 }
+
+void str_overwrite_stdout() {
+    	printf("\r%s", "> ");
+    	fflush(stdout);
+}
+
+void str_trim_lf (char* arr, int length) {
+  	int i;
+  	for (i = 0; i < length; i++) { // trim \n
+    		if (arr[i] == '\n') {
+      			arr[i] = '\0';
+      			break;
+    		}
+  	}
+}
+
+/* Add clients to queue */
+void queue_add(client_t *cl){
+	pthread_mutex_lock(&clients_mutex);
+	for(int i=0; i < MAX_CLIENTS; ++i){
+		if(!clients[i]){
+			clients[i] = cl;
+			//printf("client sockfd: %d",clients[i]->sockfd);	
+			break;
+		}
+	}
+
+	pthread_mutex_unlock(&clients_mutex);
+}
+
+/* Remove clients to queue */
+void queue_remove(int uid){
+	pthread_mutex_lock(&clients_mutex);
+	for(int i=0; i < MAX_CLIENTS; ++i){
+		if(clients[i]){
+			if(clients[i]->uid == uid){
+				clients[i] = NULL;
+				break;
+			}
+		}
+	}
+
+	pthread_mutex_unlock(&clients_mutex);
+}
+
+/* Send message to all clients except sender */
+void send_message(char *s, int uid){
+	
+	pthread_mutex_lock(&clients_mutex);
+
+	for(int i=0; i<MAX_CLIENTS; ++i){
+		if(clients[i]){
+			strcat(s ,clients[i]->name);
+			printf("test sending message \n");
+			if (write(clients[i]->sockfd, s, strlen(s)) < 0) {
+				perror("Write to descriptor failed");
+				break;
+            		}
+		}
+	}
+
+	pthread_mutex_unlock(&clients_mutex);
+}
+
 
 int userNameExist(char* name){
 	fptr = fopen(FILEPATH, "r");
@@ -85,6 +159,7 @@ int userRegister(char* username, char* password){
 	fclose(fptr);
 	return USER_NOT_FOUND;
 }
+
 /* Check file */
 int userLogin(char* name, char* password){
 	fptr = fopen(FILEPATH, "r");
@@ -101,7 +176,6 @@ int userLogin(char* name, char* password){
                                 printf("User [%s] found\n", field);
                                 field = strtok(NULL, ",");
 				strip_newline(field);
-				printf("Comparing Password [%s] with [%s]\n", password, field);
 				if(strcmp(password, field) == 0){
 					fclose(fptr);
 					return USER_FOUND;
@@ -120,51 +194,142 @@ int userLogin(char* name, char* password){
         return USER_NOT_FOUND;
 }
 
+/* Send message to all clients but the sender */
+void goToGroupChat(client_t *cli) {
+	char buff_out[BUFFER_SZ];
+	char name[50];
+	int leave_flag = 0;
+	
+	printf("Client:%s Id: %d joins the group chat\n", cli->name, cli->uid);	
+	while(1){
+		if (leave_flag) {
+			break;
+		}
+		
+		int receive = recv(cli->sockfd, buff_out, BUFFER_SZ, 0);
+		if (receive > 0){
+			if(strlen(buff_out) > 0){
+				printf("Incoming message\n");
+				send_message(buff_out, cli->uid);
+				str_trim_lf(buff_out, strlen(buff_out));
+				printf("%s -> %s\n", buff_out, cli->name);
+			}
+		} else if (receive == 0 || strcmp(buff_out, "exit") == 0){
+			sprintf(buff_out, "%s has left\n", cli->name);
+			printf("%s", buff_out);
+			send_message(buff_out, cli->uid);
+			leave_flag = 1;
+		} else {
+			printf("ERROR: -1\n");
+			leave_flag = 1;
+		}
+					
+		bzero(buff_out, BUFFER_SZ);
+	}
+
+  	/* Delete client from queue and yield thread */
+	close(cli->sockfd);
+  	queue_remove(cli->uid);
+  	free(cli);
+  	cli_count--;
+  	pthread_detach(pthread_self());
+}
 
 /* Send message to a client from a client */
 
 /* Send message to all clients but the sender */
-void handleGroupChat(int connfd) {
-	
+void goToMenu(client_t *client) {
+	 printf("Client:%s Id: %d\n", client->name, client->uid);	
+				char buff[2048] = "";
+				long valread = read(client->sockfd, buff, 2048);
+				strip_newline(buff);
+				if(strcmp(buff, "View Online") == 0) {
+					char result[50];
+					sprintf(result, "%d", currentOnline);
+					send(client->sockfd, result, sizeof(int), 0);
+				}else if(strcmp(buff, "Enter Group") == 0){
+					goToGroupChat(client);
+					printf("%s leaves group chat\n", client->name);
+				}else if(strcmp(buff, "Enter Private") == 0){
+			
+				}else if(strcmp(buff, "View History") == 0){
+			
+				}else if(strcmp(buff, "File Transfer") == 0){
+			
+				}else if(strcmp(buff, "Change Password") == 0){	
+			
+				}else if(strcmp(buff, "Logout") == 0){
+			
+				}else if(strcmp(buff, "Administrator") == 0){
+			
+				}else if(strcmp(buff, "Return") == 0){
+			
+				}else {
+					printf("[Main Menu]Unknown responce: %s\n",buff);
+				}
 }
 
 /* Send message to sender */
 
-/* Handles all communication with the client in Main Menu*/
-void handleCommunication(int connfd) {
-	char buff[2048] = "";
-     	long valread = read(connfd, buff, 2048);
-	strip_newline(buff);
-	if(strcmp(buff, "View Online") == 0) {
-		char result[50];
-		sprintf(result, "%d", currentOnline);
-		send(connfd, result, sizeof(int), 0);
-	}else if(strcmp(buff, "Enter Group") == 0){
-		handleGroupChat(connfd);
-	}else if(strcmp(buff, "Enter Private") == 0){
+/* Handles Client login and registeration */
+void *handle_client(void *arg){
 
-	}else if(strcmp(buff, "View History") == 0){
+	client_t *cli = (client_t *)arg;
+	int connfd = cli->sockfd;
 
-	}else if(strcmp(buff, "File Transfer") == 0){
+	while(1) {
+       		// Send Data
+        	char buff1[2048] = "";
+           	char buff2[2048] = "";
+            	long valread = read(connfd, buff1, 2048);
+         	
+		/***************************** Client Logs in ************************************/
+            	if(strcmp(buff1, "login") == 0) {
+                	memset(buff1,0,strlen(buff1));
+			printf("Client loggin on\n");
+			read(connfd, buff1, 2048);
+			printf("Username: %s\n", buff1);
+			read(connfd, buff2, 2048);
+			printf("Password: %s\n", buff2);
 
-	}else if(strcmp(buff, "Change Password") == 0){	
-
-	}else if(strcmp(buff, "Logout") == 0){
-
-	}else if(strcmp(buff, "Administrator") == 0){
-
-	}else if(strcmp(buff, "Return") == 0){
-
-	}else {
-		printf("[Main Menu]Unknown responce: %s\n",buff);
+                	/* Check is user name/pwd is valid */
+                	if(userLogin(buff1, buff2) == USER_FOUND){
+				strcpy(cli->name, buff1);
+				send(connfd, "Log on success", 50,0);
+				printf("Client:%s Id: %d\n", cli->name, cli->uid);
+				goToMenu(cli);
+			} else {
+    				send(connfd, "Log on failed", 50,0);
+			}
+		/* Client regesters */
+            	} else if(strcmp(buff1, "register") == 0) {
+                                memset(buff1,0,strlen(buff1));
+                                printf("Client registering\n");
+                                read(connfd, buff1, 2048);
+                                printf("Username: %s\n", buff1);
+                                read(connfd, buff2, 2048);
+                                printf("Password: %s\n", buff2);
+                                if(userRegister(buff1, buff2) == USER_FOUND)
+                                        send(connfd, "Username already exits", 50,0);
+                                else
+                                        send(connfd, "Register successful", 50,0);
+		/* Client exits */
+		} else if (strcmp(buff1, "exit") == 0) {
+             		printf("Client exiting...\n");
+                   	break;
+            	}else if(valread > 0){
+            		printf("[Login Menu] Unknown response: %s\n",buff1);
+      		}
 	}
 }
+
 
 /* Handles Server starting sequence */
 int main() {
 	int listenfd = 0, connfd = 0; 
 	struct sockaddr_in server_addr;
 	struct sockaddr_in client_addr;
+	pthread_t tid;
 	
 	// Server settings
 	listenfd = socket(AF_INET,SOCK_STREAM,0);
@@ -209,48 +374,17 @@ int main() {
 		}
 		printf("Client connection Successful\n");
 		
-		while(1) {	
-			// Send Data
-			char buff1[2048] = "";
-			char buff2[2048] = "";
-			long valread = read(connfd, buff1, 2048);
-			if(strcmp(buff1, "login") == 0) {
-				memset(buff1,0,strlen(buff1));
-				printf("Client loggin on\n");
-				read(connfd, buff1, 2048);
-                                printf("Username: %s\n", buff1);
-                                read(connfd, buff2, 2048);
-                                printf("Password: %s\n", buff2);
-				
-				//check csv fil
-				if(userLogin(buff1, buff2) == USER_FOUND){
-					currentOnline++;
-					send(connfd, "Log on success", 50,0);
-					handleCommunication(connfd);
-				}
-                                else
-                                        send(connfd, "Log on failed", 50,0);
+		/* Client settings */
+		client_t *cli = (client_t *)malloc(sizeof(client_t));
+		cli->address = client_addr;
+		cli->sockfd = connfd;
+		cli->uid = uid++;
 
-			} else if(strcmp(buff1, "register") == 0) {
-				memset(buff1,0,strlen(buff1));
-				printf("Client registering\n");
-				read(connfd, buff1, 2048);
-				printf("Username: %s\n", buff1);
-				read(connfd, buff2, 2048);
-				printf("Password: %s\n", buff2);
+		/* Add client to the queue and fork thread */
+		queue_add(cli);
+		
+		pthread_create(&tid, NULL, &handle_client, (void*)cli);
 
-				if(userRegister(buff1, buff2) == USER_FOUND)
-					send(connfd, "Username already exits", 50,0);
-				else
-					send(connfd, "Register successful", 50,0);
-
-			} else if (strcmp(buff1, "exit") == 0) {
-			       	printf("Client exiting...\n");
-		       		break;	       
-			}else if(valread > 0){
-				printf("[Login Menu] Unknown response: %s\n",buff1);
-			}
-		}
 		/* Decrease server CPU usage */
 		sleep(1);
 	}
