@@ -92,7 +92,7 @@ void recv_msg_handler() {
 	while (in_chat) {
 		int receive = recv(sockfd, message, LENGTH, 0);
 		if (receive > 0) {
-			if(strcmp(message, "exit") == 0)
+			if(strcmp(message, "Leave Group") == 0)
 				break;
 			printf("%s", message);
 			str_overwrite_stdout();
@@ -107,6 +107,20 @@ void recv_msg_handler() {
 	 printf("Stop receiving from server\n");
 }
 
+void goToPrivateChat() {
+	/* Sends messages to server */
+        pthread_t send_msg_thread;
+        if(pthread_create(&send_msg_thread, NULL, (void *) send_msg_handler, NULL) != 0){
+                printf("ERROR: pthread\n");
+        }
+        /* recieves messages to server */
+        pthread_t recv_msg_thread;
+        if(pthread_create(&recv_msg_thread, NULL, (void *) recv_msg_handler, NULL) != 0){
+                printf("ERROR: pthread\n");
+        }
+	pthread_join(send_msg_thread, NULL);
+        pthread_join(recv_msg_thread, NULL);
+}
 
 
 void handleGroupChat() {
@@ -145,12 +159,12 @@ void sendToMainMenu() {
 			case 2:
 				printf("\n-=| Group Chat |=-\n");
 				send(sockfd, "Enter Group", MAX, 0);
-				handleGroupChat(sockfd);
+				handleGroupChat();
 				break;
 			case 3:	
 				printf("\n-=| Private Chat |=-\n");
 				send(sockfd, "Enter Private", MAX, 0);
-			
+				goToPrivateChat();
 				break;
 			case 4:
 				printf("View chat history");

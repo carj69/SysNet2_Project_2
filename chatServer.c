@@ -144,9 +144,9 @@ void send_message_to_group(char *s, int uid){
 
 	for(int i=0; i<MAX_CLIENTS; ++i){
 		if(clients[i]){
-			if(clients[i]->in_group == 1){
+			if(clients[i]->in_group == 1 && clients[i]->uid != uid){
 				strcat(s ,clients[i]->name);
-				printf("test sending message \n");
+				//printf("test sending message \n");
 				send(clients[i]->sockfd, s, strlen(s), 0);
 			}
 		}
@@ -154,6 +154,25 @@ void send_message_to_group(char *s, int uid){
 
 	pthread_mutex_unlock(&clients_mutex);
 }
+
+/* Send message to a client */
+void send_message(char *s, char* id){
+
+        pthread_mutex_lock(&clients_mutex);
+
+        for(int i=0; i<MAX_CLIENTS; ++i){
+                if(clients[i]){
+                        if(strcmp(clients[i]->name, id)){
+                                strcat(s ,clients[i]->name);
+                                //printf("test sending message \n");
+                                send(clients[i]->sockfd, s, strlen(s), 0);
+                        }
+                }
+        }
+
+        pthread_mutex_unlock(&clients_mutex);
+}
+
 
 
 int userNameExist(char* name){
@@ -230,6 +249,35 @@ int userLogin(char* name, char* password){
         return USER_NOT_FOUND;
 }
 
+/* Send to a client */
+void goToPrivateChat(client_t *cli) {
+ 	char to[BUFFER_SZ];
+	char message[BUFFER_SZ];
+
+	int receiver_name = recv(cli->sockfd, to, BUFFER_SZ, 0);	
+	int receive_message; 
+	while(1){
+		if(userNameExist(to))
+			printf("User found\n");
+
+		receive_message = recv(cli->sockfd, message, BUFFER_SZ, 0);
+ 		if (receive_message > 0){
+                        if(strlen(message) > 0){
+				if(strcmp(message, "exit"))
+					break;
+                                send_message(message, to);
+                                str_trim_lf(message, strlen(message));
+                                printf("Private message from %s to %s\n", cli->name, to);
+			}
+
+                }
+
+		bzero(message, BUFFER_SZ);	
+	}
+	
+}
+
+
 /* Send message to all clients but the sender */
 void goToGroupChat(client_t *cli) {
 	char buff_out[BUFFER_SZ];
@@ -238,38 +286,25 @@ void goToGroupChat(client_t *cli) {
 	
 	join_groupchat(cli->uid);
 	printf("Client:%s Id: %d joins the group chat\n", cli->name, cli->uid);	
-	while(1){
-		if (leave_flag) {
-			break;
-		}
-			
+	while(1){	
 		int receive = recv(cli->sockfd, buff_out, BUFFER_SZ, 0);
 		/* If message received */
 		if (receive > 0){
-			if(strlen(buff_out) > 0){
-				printf("Incoming message\n");
+			if(strlen(buff_out) > 0) {
+				if(strcmp(buff_out, "exit"))
+					break;
 				send_message_to_group(buff_out, cli->uid);
 				str_trim_lf(buff_out, strlen(buff_out));
-				printf("%s -> %s\n", buff_out, cli->name);
+				printf("Group message from %s: %s\n", cli->name, buff_out);
 			}
-		} else if (receive == 0 || strcmp(buff_out, "exit") == 0){
+		}else if (receive == 0){
 			sprintf(buff_out, "%s has left\n", cli->name);
 			printf("%s", buff_out);
 			send_message_to_group(buff_out, cli->uid);
 			leave_flag = 1;
-		} else {
-			printf("ERROR: -1\n");
-			leave_flag = 1;
-		}
-				
+		}		
 		bzero(buff_out, BUFFER_SZ);
 	}
-
-  	/* Delete client from Group chat queue and yield thread */
-	//close(cli->sockfd);
-	//queue_remove(cli->uid);
-  	//cli_count--;
-  	//pthread_detach(pthread_self());
 	leave_groupchat(cli->uid);
 }
 
@@ -294,7 +329,7 @@ void goToMenu(client_t *client) {
 			printf("%s leaves group chat\n", client->name);
 		}else if(strcmp(buff, "Enter Private") == 0){
 			printf("Client [%s] sends [%s] command\n", client->name, buff);
-			
+			goToPrivateChat(client);	
 		}else if(strcmp(buff, "View History") == 0){
 			printf("Client [%s] sends [%s] command\n", client->name, buff);
 				
