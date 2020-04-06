@@ -68,32 +68,28 @@ void send_msg_handler() {
 	char buffer[LENGTH + 32] = "";
 
   	while(1) {
-	  	str_overwrite_stdout();
+	  		str_overwrite_stdout();
 	    	fgets(message, LENGTH, stdin);
 	    	str_trim_lf(message, LENGTH);
 	
-    		if (strcmp(message, "exit") == 0) {
-			in_chat = 0;
-			break;
-    		} else {
+    		
 			sprintf(buffer, "%s: %s\n",cName, message);
 			send(sockfd, buffer, strlen(buffer), 0);
-    		}
+    		
 
-		bzero(message, LENGTH);
+			bzero(message, LENGTH);
     		bzero(buffer, LENGTH + 32);
   	}
   	catch_ctrl_c_and_exit(2);
 }
 
 void recv_msg_handler() {
-	char message[LENGTH] = {};
+	char message[LENGTH] = "";
 	printf("\nNow receving\n");
 	while (in_chat) {
 		int receive = recv(sockfd, message, LENGTH, 0);
 		if (receive > 0) {
-			if(strcmp(message, "Leave Group") == 0)
-				break;
+			
 			printf("%s", message);
 			str_overwrite_stdout();
 		} else if (receive == 0) {
@@ -102,7 +98,7 @@ void recv_msg_handler() {
 		} else {
 			// -1
 		}
-		memset(message, 0, sizeof(message));
+			bzero(message, LENGTH);
 	}
 	 printf("Stop receiving from server\n");
 }
@@ -118,7 +114,7 @@ void goToPrivateChat() {
         if(pthread_create(&recv_msg_thread, NULL, (void *) recv_msg_handler, NULL) != 0){
                 printf("ERROR: pthread\n");
         }
-	pthread_join(send_msg_thread, NULL);
+		pthread_join(send_msg_thread, NULL);
         pthread_join(recv_msg_thread, NULL);
 }
 
@@ -141,9 +137,33 @@ void handleGroupChat() {
 	pthread_join(recv_msg_thread, NULL);
 }
 
+void fileTransfer(){
+		//char fileName[15];
+		//printf("Enter file name you want to transfer:");
+		//scanf("%s",fileName);
+		//send(sockfd,fileName, MAX, 0);
+	//send(sockfd, "File Transfer", strlen("File Transfer"), 0);	
+	
+	FILE *f;
+    char buffer[2048];
+    int words = 0;
+    int n = 0;
+    
+    f=fopen("glad.txt","r");
+    
+    fscanf(f, "%[^\n]", buffer);
+	printf("this is what being sent: %s\n",buffer);
+	send(sockfd, buffer,strlen(buffer), 0);
+
+	printf("The file was sent successfully");
+	fclose(f);
+	 //free(word);
+}
+
 void sendToMainMenu() {
 	int option;
 	char server_response[LENGTH] = "";
+	
 	while(1) {	
 		memset(server_response, 0, strlen(server_response));
 		printMainMenu();
@@ -174,7 +194,7 @@ void sendToMainMenu() {
 			case 5:
 				printf("File transfering");
 				send(sockfd, "File Transfer", MAX, 0);
-			
+				fileTransfer();
 				break;
 			case 6:
 				printf("Change password");

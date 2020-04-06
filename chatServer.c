@@ -262,15 +262,14 @@ void goToPrivateChat(client_t *cli) {
 
 		receive_message = recv(cli->sockfd, message, BUFFER_SZ, 0);
  		if (receive_message > 0){
-                        if(strlen(message) > 0){
-				if(strcmp(message, "exit"))
-					break;
-                                send_message(message, to);
-                                str_trim_lf(message, strlen(message));
-                                printf("Private message from %s to %s\n", cli->name, to);
-			}
-
-                }
+                if(strlen(message) > 0){
+				
+                	send_message(message, to);
+                    str_trim_lf(message, strlen(message));
+                    printf("Private message from %s to %s\n", cli->name, to);
+					
+				}
+        }
 
 		bzero(message, BUFFER_SZ);	
 	}
@@ -291,8 +290,6 @@ void goToGroupChat(client_t *cli) {
 		/* If message received */
 		if (receive > 0){
 			if(strlen(buff_out) > 0) {
-				if(strcmp(buff_out, "exit"))
-					break;
 				send_message_to_group(buff_out, cli->uid);
 				str_trim_lf(buff_out, strlen(buff_out));
 				printf("Group message from %s: %s\n", cli->name, buff_out);
@@ -308,6 +305,18 @@ void goToGroupChat(client_t *cli) {
 	leave_groupchat(cli->uid);
 }
 
+void fileTransfer(client_t *cli){
+	
+			char buffer[2048];
+			FILE *fp;
+            fp = fopen("glad_receive.txt","w");            
+			int receive = recv(cli->sockfd, buffer, BUFFER_SZ, 0);
+			printf("this is buffer: %s\n\n",buffer);
+			fprintf(fp ,"%s",buffer);   
+    		printf("The file was received successfully\n");
+	   		fclose(fp);
+	   		
+}
 /* Send message to a client from a client */
 
 /* Send message to all clients but the sender */
@@ -335,6 +344,7 @@ void goToMenu(client_t *client) {
 				
 		}else if(strcmp(buff, "File Transfer") == 0){
 			printf("Client [%s] sends [%s] command\n", client->name, buff);
+			fileTransfer(client);
 				
 		}else if(strcmp(buff, "Change Password") == 0){	
 			printf("Client [%s] sends [%s] command\n", client->name, buff);
